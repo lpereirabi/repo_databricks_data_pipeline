@@ -100,7 +100,7 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - uses: databricks/setup-cli@main
+      - uses: databricks/setup-cli@v1.17.0
       - run: pip install build
       - name: Validar bundle
         run: databricks bundle validate -t dev
@@ -128,7 +128,7 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - uses: databricks/setup-cli@main
+      - uses: databricks/setup-cli@v1.17.0
       - name: Dependencias de build e verificacao
         run: pip install build databricks-sdk
       - name: Validar bundle
@@ -179,7 +179,7 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - uses: databricks/setup-cli@main
+      - uses: databricks/setup-cli@v1.17.0
       - name: Dependencias de build e verificacao
         run: pip install build databricks-sdk
       - name: Validar bundle
