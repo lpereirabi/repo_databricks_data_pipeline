@@ -1,0 +1,35 @@
+# --- Segredos e acessos (NUNCA versionar) ---
+Databricks-access.json
+*.pat
+.env
+.env.*
+.databrickscfg
+
+# --- Dados (o CSV completo nao vai para o Git; so a amostra em tests/fixtures) ---
+data/raw/*.csv
+data/raw/*.xlsx
+!data/raw/.gitkeep
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# --- Databricks / IDE ---
+.databricks/
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# --- Saidas geradas ---
+out/
+relatorio_local/
+*.pbix

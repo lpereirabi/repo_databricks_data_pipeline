@@ -1,0 +1,35 @@
+# Schemas (camadas do Medalhao) e volumes. Governanca como codigo: nada e criado a mao na UI.
+resources:
+  schemas:
+    landing:
+      catalog_name: ${var.catalog}
+      name: ${var.schema_prefix}_landing
+      comment: "Landing: arquivos de origem (CSV) e relatorios gerados"
+    bronze:
+      catalog_name: ${var.catalog}
+      name: ${var.schema_prefix}_bronze
+      comment: "Bronze: dado bruto, fiel a origem, com auditoria"
+    silver:
+      catalog_name: ${var.catalog}
+      name: ${var.schema_prefix}_silver
+      comment: "Silver: dado limpo, tipado e validado (+ quarentena)"
+    gold:
+      catalog_name: ${var.catalog}
+      name: ${var.schema_prefix}_gold
+      comment: "Gold: modelo dimensional (estrela) para BI"
+    ctl:
+      catalog_name: ${var.catalog}
+      name: ${var.schema_prefix}_ctl
+      comment: "Controle: parametros, estado das cargas, logs, qualidade e dicionario de dados"
+
+  volumes:
+    landing_arquivos:
+      catalog_name: ${var.catalog}
+      schema_name: ${resources.schemas.landing.name}
+      name: arquivos
+      comment: "Entrada: marketing_AAAAMMDD.csv"
+    landing_relatorios:
+      catalog_name: ${var.catalog}
+      schema_name: ${resources.schemas.landing.name}
+      name: relatorios
+      comment: "Saida: paginas HTML de relatorios e dashboards"

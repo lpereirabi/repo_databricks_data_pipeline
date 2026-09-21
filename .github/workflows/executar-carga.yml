@@ -1,0 +1,45 @@
+name: Executar carga (manual)
+
+# Operacao: roda o job em um ambiente ja implantado, para uma data especifica ou para tudo que estiver pendente.
+# Nao faz deploy. Para PROD, o environment "prod" exige aprovacao.
+on:
+  workflow_dispatch:
+    inputs:
+      ambiente:
+        description: Ambiente
+        type: choice
+        options: [dev, stg, prod]
+        default: stg
+      data_carga:
+        description: 'auto (todos os arquivos pendentes) ou AAAA-MM-DD'
+        default: auto
+      reprocessar:
+        description: Refazer uma data ja carregada (so a ultima carga com sucesso)
+        type: choice
+        options: ["false", "true"]
+        default: "false"
+
+permissions:
+  contents: read
+
+jobs:
+  executar:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.ambiente }}
+    concurrency:
+      group: deploy-${{ inputs.ambiente }}
+      cancel-in-progress: false
+    env:
+      DATABRICKS_HOST: ${{ vars.DATABRICKS_HOST }}
+      DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: databricks/setup-cli@main
+      - run: pip install build
+      - name: Executar job
+        run: |
+          databricks bundle run marketing_pipeline -t "${{ inputs.ambiente }}" \
+            --params "data_carga=${{ inputs.data_carga }},reprocessar=${{ inputs.reprocessar }}"

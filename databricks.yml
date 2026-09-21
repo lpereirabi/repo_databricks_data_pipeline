@@ -1,0 +1,46 @@
+# Databricks Asset Bundle: infraestrutura como codigo do pipeline de Marketing.
+# Comandos:  databricks bundle validate -t dev | deploy -t stg | run marketing_pipeline -t prod
+bundle:
+  name: marketing_pipeline
+
+include:
+  - resources/*.yml
+
+variables:
+  catalog:
+    description: Catalogo do Unity Catalog. Free Edition nao permite criar catalogos via API; use "workspace".
+    default: workspace
+  schema_prefix:
+    description: Prefixo dos schemas do ambiente (mkt_dev | mkt_stg | mkt_prod). Isola os ambientes no mesmo catalogo.
+
+# O wheel e construido no deploy (e no CI, no estagio "Packing") e instalado no ambiente serverless do job.
+artifacts:
+  mkt_pipeline_whl:
+    type: whl
+    build: python -m build --wheel
+    path: .
+
+workspace:
+  host: https://dbc-121388c5-4b98.cloud.databricks.com
+
+targets:
+  dev:
+    default: true
+    variables:
+      schema_prefix: mkt_dev
+
+  stg:
+    variables:
+      schema_prefix: mkt_stg
+
+  prod:
+    variables:
+      schema_prefix: mkt_prod
+    resources:
+      jobs:
+        marketing_pipeline:
+          # Nasce PAUSADO: ative no workspace quando quiser a carga automatica diaria.
+          schedule:
+            quartz_cron_expression: "0 0 6 * * ?"
+            timezone_id: America/Sao_Paulo
+            pause_status: PAUSED

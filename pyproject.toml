@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mkt-pipeline"
+dynamic = ["version"]
+description = "Pipeline de dados de Marketing (arquitetura Medalhao) em Databricks + Delta Lake"
+readme = "README.md"
+requires-python = ">=3.10"
+# PySpark e Delta ja vem no runtime serverless do Databricks: nao entram como dependencia do wheel.
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.5", "build>=1.2"]
+spark-local = ["pyspark>=3.5,<4.1"]
+connect = ["databricks-connect>=17"]
+tools = ["databricks-sdk>=0.30"]
+
+[project.scripts]
+mkt-pipeline = "mkt_pipeline.cli:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "mkt_pipeline.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+markers = [
+    "spark: testes que precisam de uma SparkSession (pyspark local ou Databricks Connect)",
+]
+
+[tool.ruff]
+line-length = 110
+target-version = "py310"
+src = ["src", "tests", "scripts"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "W"]
+# E501: descricoes de regras/metadados sao textos longos de proposito; o formatter cuida do codigo.
+ignore = ["E501"]

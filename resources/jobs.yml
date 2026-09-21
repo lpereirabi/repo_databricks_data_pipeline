@@ -1,0 +1,165 @@
+# Job (Lakeflow Jobs) do pipeline. Computo 100% serverless.
+#
+#   preparar -> bronze -> silver -> gold_dimensoes -> gold_fatos -> governanca -> relatorio
+#
+# Parametros do job:
+#   data_carga   "auto" (todos os arquivos pendentes) ou "AAAA-MM-DD" (uma data especifica)
+#   reprocessar  "true" para refazer uma data que ja foi carregada com sucesso
+resources:
+  jobs:
+    marketing_pipeline:
+      name: marketing-pipeline-${bundle.target}
+      description: "Marketing: landing (CSV) -> bronze -> silver -> gold (estrela) + governanca + relatorio HTML"
+      max_concurrent_runs: 1
+      queue:
+        enabled: true
+      timeout_seconds: 7200
+      tags:
+        projeto: marketing
+        ambiente: ${bundle.target}
+      email_notifications:
+        on_failure:
+          - ${workspace.current_user.userName}
+      parameters:
+        - name: data_carga
+          default: auto
+        - name: reprocessar
+          default: "false"
+
+      environments:
+        - environment_key: mkt
+          spec:
+            environment_version: "3"
+            dependencies:
+              - ../dist/*.whl
+
+      tasks:
+        - task_key: preparar
+          environment_key: mkt
+          python_wheel_task:
+            package_name: mkt_pipeline
+            entry_point: mkt-pipeline
+            parameters:
+              - preparar
+              - --ambiente
+              - ${bundle.target}
+              - --catalog
+              - ${var.catalog}
+              - --prefixo
+              - ${var.schema_prefix}
+              - --run-id
+              - "{{job.run_id}}"
+              - --data-carga
+              - "{{job.parameters.data_carga}}"
+              - --reprocessar
+              - "{{job.parameters.reprocessar}}"
+
+        - task_key: bronze
+          depends_on:
+            - task_key: preparar
+          environment_key: mkt
+          python_wheel_task:
+            package_name: mkt_pipeline
+            entry_point: mkt-pipeline
+            parameters:
+              - bronze
+              - --ambiente
+              - ${bundle.target}
+              - --catalog
+              - ${var.catalog}
+              - --prefixo
+              - ${var.schema_prefix}
+              - --run-id
+              - "{{job.run_id}}"
+
+        - task_key: silver
+          depends_on:
+            - task_key: bronze
+          environment_key: mkt
+          python_wheel_task:
+            package_name: mkt_pipeline
+            entry_point: mkt-pipeline
+            parameters:
+              - silver
+              - --ambiente
+              - ${bundle.target}
+              - --catalog
+              - ${var.catalog}
+              - --prefixo
+              - ${var.schema_prefix}
+              - --run-id
+              - "{{job.run_id}}"
+
+        - task_key: gold_dimensoes
+          depends_on:
+            - task_key: silver
+          environment_key: mkt
+          python_wheel_task:
+            package_name: mkt_pipeline
+            entry_point: mkt-pipeline
+            parameters:
+              - gold-dimensoes
+              - --ambiente
+              - ${bundle.target}
+              - --catalog
+              - ${var.catalog}
+              - --prefixo
+              - ${var.schema_prefix}
+              - --run-id
+              - "{{job.run_id}}"
+
+        - task_key: gold_fatos
+          depends_on:
+            - task_key: gold_dimensoes
+          environment_key: mkt
+          python_wheel_task:
+            package_name: mkt_pipeline
+            entry_point: mkt-pipeline
+            parameters:
+              - gold-fatos
+              - --ambiente
+              - ${bundle.target}
+              - --catalog
+              - ${var.catalog}
+              - --prefixo
+              - ${var.schema_prefix}
+              - --run-id
+              - "{{job.run_id}}"
+
+        - task_key: governanca
+          depends_on:
+            - task_key: gold_fatos
+          environment_key: mkt
+          python_wheel_task:
+            package_name: mkt_pipeline
+            entry_point: mkt-pipeline
+            parameters:
+              - governanca
+              - --ambiente
+              - ${bundle.target}
+              - --catalog
+              - ${var.catalog}
+              - --prefixo
+              - ${var.schema_prefix}
+              - --run-id
+              - "{{job.run_id}}"
+
+        # ALL_DONE: o relatorio e gerado mesmo quando uma etapa falha (mostra o erro no painel operacional).
+        - task_key: relatorio
+          depends_on:
+            - task_key: governanca
+          run_if: ALL_DONE
+          environment_key: mkt
+          python_wheel_task:
+            package_name: mkt_pipeline
+            entry_point: mkt-pipeline
+            parameters:
+              - relatorio
+              - --ambiente
+              - ${bundle.target}
+              - --catalog
+              - ${var.catalog}
+              - --prefixo
+              - ${var.schema_prefix}
+              - --run-id
+              - "{{job.run_id}}"

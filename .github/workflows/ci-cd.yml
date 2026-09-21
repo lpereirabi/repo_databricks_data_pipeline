@@ -1,0 +1,199 @@
+name: CI/CD
+
+# Modelo "uma branch por ambiente":
+#   feature/* --PR--> dev --PR--> stg --PR--> prd
+#
+#   PR (qualquer alvo)  -> Testing + Packing (nada e implantado)
+#   push em main        -> Testing + Packing
+#   push em dev         -> Testing + Packing + deploy em DEV
+#   push em stg         -> Testing + Packing + deploy em STG + carga de teste + smoke test
+#   push em prd         -> Testing + Packing + deploy em PROD (aprovacao manual no environment "prod")
+on:
+  pull_request:
+    branches: [main, dev, stg, prd]
+  push:
+    branches: [main, dev, stg, prd]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-cd-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  DATABRICKS_HOST: ${{ vars.DATABRICKS_HOST }}
+  CATALOG: workspace
+
+jobs:
+  # ------------------------------------------------------------------------------------------
+  # 1) TESTING: lint, formatacao e testes (unitarios + Spark local)
+  # ------------------------------------------------------------------------------------------
+  testing:
+    name: 1 - Testing
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Instalar dependencias
+        run: pip install -e ".[dev,spark-local]"
+      - name: Lint (ruff)
+        run: ruff check .
+      - name: Formatacao (ruff format)
+        run: ruff format --check .
+      - name: Testes unitarios
+        run: pytest tests/unit -q
+      - name: Testes de Spark (PySpark local)
+        run: pytest tests/spark -q
+
+  # ------------------------------------------------------------------------------------------
+  # 2) PACKING: gera o wheel e valida o conteudo/entry point
+  # ------------------------------------------------------------------------------------------
+  packing:
+    name: 2 - Packing
+    needs: testing
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Construir wheel
+        run: |
+          pip install build
+          python -m build --wheel
+      - name: Validar wheel
+        run: python scripts/verificar_wheel.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheel
+          path: dist/*.whl
+          if-no-files-found: error
+          retention-days: 30
+
+  # ------------------------------------------------------------------------------------------
+  # DEV: deploy do bundle (sem executar o job)
+  # ------------------------------------------------------------------------------------------
+  dev:
+    name: 3 - DEV
+    needs: packing
+    if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-latest
+    environment: dev
+    concurrency:
+      group: deploy-dev
+      cancel-in-progress: false
+    env:
+      DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - uses: databricks/setup-cli@main
+      - run: pip install build
+      - name: Validar bundle
+        run: databricks bundle validate -t dev
+      - name: Deploy (schemas, volumes, job)
+        run: databricks bundle deploy -t dev
+
+  # ------------------------------------------------------------------------------------------
+  # 3) STG: deploy, carga de teste (2 arquivos: SCD2 + quarentena) e smoke test dos dados
+  # ------------------------------------------------------------------------------------------
+  stg:
+    name: 3 - STG
+    needs: packing
+    if: github.event_name == 'push' && github.ref == 'refs/heads/stg'
+    runs-on: ubuntu-latest
+    environment: stg
+    concurrency:
+      group: deploy-stg
+      cancel-in-progress: false
+    env:
+      DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+      PREFIXO: mkt_stg
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - uses: databricks/setup-cli@main
+      - name: Dependencias de build e verificacao
+        run: pip install build databricks-sdk
+      - name: Validar bundle
+        run: databricks bundle validate -t stg
+      - name: Deploy (schemas, volumes, job)
+        run: databricks bundle deploy -t stg
+      - name: Enviar arquivos de teste para a landing
+        run: |
+          python scripts/gerar_carga_teste.py --base tests/fixtures/marketing_base.csv --data 2026-01-02 --saida out
+          cp tests/fixtures/marketing_base.csv out/marketing_20260101.csv
+          for f in out/marketing_20260101.csv out/marketing_20260102.csv; do
+            databricks fs cp "$f" "dbfs:/Volumes/${CATALOG}/${PREFIXO}_landing/arquivos/$(basename "$f")" --overwrite
+          done
+      - name: Executar o pipeline em STG
+        run: databricks bundle run marketing_pipeline -t stg --params data_carga=auto,reprocessar=false
+      - name: Smoke test dos dados (reconciliacao entre camadas)
+        run: |
+          python scripts/verificar_carga.py --catalog "$CATALOG" --prefixo "$PREFIXO" --data-carga 2026-01-01
+          python scripts/verificar_carga.py --catalog "$CATALOG" --prefixo "$PREFIXO" --data-carga 2026-01-02
+      - name: Gerar relatorio HTML de STG
+        if: always()
+        run: python scripts/gerar_relatorio_local.py --catalog "$CATALOG" --prefixo "$PREFIXO" --ambiente stg --saida out/relatorio-stg.html
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: relatorio-stg
+          path: out/relatorio-stg.html
+          if-no-files-found: ignore
+
+  # ------------------------------------------------------------------------------------------
+  # 4) PROD: exige aprovacao manual (Required reviewers no environment "prod")
+  # ------------------------------------------------------------------------------------------
+  prod:
+    name: 4 - PROD
+    needs: packing
+    if: github.event_name == 'push' && github.ref == 'refs/heads/prd'
+    runs-on: ubuntu-latest
+    environment: prod
+    concurrency:
+      group: deploy-prod
+      cancel-in-progress: false
+    env:
+      DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+      PREFIXO: mkt_prod
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - uses: databricks/setup-cli@main
+      - name: Dependencias de build e verificacao
+        run: pip install build databricks-sdk
+      - name: Validar bundle
+        run: databricks bundle validate -t prod
+      - name: Deploy (schemas, volumes, job)
+        run: databricks bundle deploy -t prod
+      - name: Executar o pipeline em PROD (processa arquivos pendentes na landing de PROD)
+        run: databricks bundle run marketing_pipeline -t prod --params data_carga=auto,reprocessar=false
+      - name: Gerar relatorio HTML de PROD
+        if: always()
+        run: python scripts/gerar_relatorio_local.py --catalog "$CATALOG" --prefixo "$PREFIXO" --ambiente prod --saida out/relatorio-prod.html
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: relatorio-prod
+          path: out/relatorio-prod.html
+          if-no-files-found: ignore

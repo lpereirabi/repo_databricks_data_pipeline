@@ -1,0 +1,9 @@
+# Texto normalizado em LF no repositorio (o CI roda em Linux)
+* text=auto eol=lf
+
+# Dados: preservar bytes exatos (o CSV de origem tem BOM e CRLF; o pipeline depende disso ser testado)
+*.csv -text
+*.pbix binary
+
+# Scripts PowerShell no Windows
+*.ps1 text eol=crlf
