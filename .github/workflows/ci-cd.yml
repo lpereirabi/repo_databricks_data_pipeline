@@ -73,7 +73,7 @@ jobs:
           python -m build --wheel
       - name: Validar wheel
         run: python scripts/verificar_wheel.py
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: wheel
           path: dist/*.whl
@@ -151,7 +151,7 @@ jobs:
       - name: Gerar relatorio HTML de STG
         if: always()
         run: python scripts/gerar_relatorio_local.py --catalog "$CATALOG" --prefixo "$PREFIXO" --ambiente stg --saida out/relatorio-stg.html
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: relatorio-stg
@@ -191,7 +191,7 @@ jobs:
       - name: Gerar relatorio HTML de PROD
         if: always()
         run: python scripts/gerar_relatorio_local.py --catalog "$CATALOG" --prefixo "$PREFIXO" --ambiente prod --saida out/relatorio-prod.html
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: relatorio-prod
