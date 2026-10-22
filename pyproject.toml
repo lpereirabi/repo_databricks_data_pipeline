@@ -13,7 +13,7 @@ dependencies = []
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.5", "build>=1.2"]
-spark-local = ["pyspark>=3.5,<4.1"]
+spark-local = ["pyspark>=3.5,<4.3"]
 connect = ["databricks-connect>=17"]
 tools = ["databricks-sdk>=0.30"]
 
